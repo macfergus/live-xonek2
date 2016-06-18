@@ -1,6 +1,10 @@
+import Live
+import MidiRemoteScript
 from _Framework.ButtonElement import ButtonElement
 from _Framework.ButtonMatrixElement import ButtonMatrixElement
 from _Framework.ControlSurface import ControlSurface
+from _Framework.DeviceComponent import DeviceComponent
+from _Framework.EncoderElement import EncoderElement
 from _Framework.InputControlElement import *
 from _Framework.MixerComponent import MixerComponent
 from _Framework.SessionComponent import SessionComponent
@@ -8,6 +12,24 @@ from _Framework.SliderElement import SliderElement
 
 
 g_logger = None
+DEBUG = True
+
+
+def log(msg):
+    if DEBUG:
+        if g_logger is not None:
+            g_logger(msg)
+
+
+EQ_DEVICES = {
+    'Eq8': {
+        'Gains': ['%i Gain A' % (index + 1) for index in range(8)]
+    },
+    'FilterEQ3': {
+        'Gains': ['GainLo', 'GainMid', 'GainHi'],
+        'Cuts': ['LowOn', 'MidOn', 'HighOn']
+    }
+}
 
 CHANNEL = 0
 
@@ -39,8 +61,156 @@ def button(notenr, name=None):
 
 
 def fader(notenr):
-    rv = SliderElement(MIDI_CC_TYPE, CHANNEL, notenr)
-    return rv
+    return SliderElement(MIDI_CC_TYPE, CHANNEL, notenr)
+
+
+def knob(cc):
+    return EncoderElement(MIDI_CC_TYPE, CHANNEL, cc, Live.MidiMap.MapMode.absolute)
+
+
+class MixerWithDevices(MixerComponent):
+    def __init__(self, num_tracks, num_returns=0):
+        self.devices = []
+        self.eqs = []
+        MixerComponent.__init__(self, num_tracks, num_returns)
+        for i in range(len(self._channel_strips)):
+            dev = {
+                "component": DeviceComponent(),
+                "cb": None,
+                "track": None
+            }
+            self.devices.append(dev)
+            self.register_components(dev["component"])
+            eq = {
+                "component": DeviceComponent(),
+                "cb": None,
+                "track": None
+            }
+            self.eqs.append(eq)
+            self.register_components(eq["component"])
+        self._reassign_tracks()
+
+    def get_active_tracks(self):
+        tracks_to_use = self.tracks_to_use()
+        num_tracks = len(self._channel_strips)
+        return tracks_to_use[self._track_offset:self._track_offset + num_tracks]
+
+    def _reassign_tracks(self):
+        super(MixerWithDevices, self)._reassign_tracks()
+
+        # assign each DeviceComponent to the first device on its track
+        # this could be called before we construct self.devices
+        if self.devices:
+            log("reassigning tracks")
+            tracks_to_use = self.get_active_tracks()
+            log("tracks_to_use has %d elements" % len(tracks_to_use))
+            log("devices has %d" % len(self.devices))
+            for i, dev in enumerate(self.devices):
+                if i < len(tracks_to_use):
+                    log("device %d gets a track %s" % (i, tracks_to_use[i].name))
+                    self.assign_device_to_track(tracks_to_use[i], i)
+                else:
+                    log("device %d gets no track" % i)
+                    self.assign_device_to_track(None, i)
+        if self.eqs:
+            log("reassigning tracks")
+            tracks_to_use = self.get_active_tracks()
+            log("tracks_to_use has %d elements" % len(tracks_to_use))
+            log("devices has %d" % len(self.devices))
+            for i, eq in enumerate(self.eqs):
+                if i < len(tracks_to_use):
+                    log("device %d gets a track %s" % (i, tracks_to_use[i].name))
+                    self.assign_eq_to_track(tracks_to_use[i], i)
+                else:
+                    log("device %d gets no track" % i)
+                    self.assign_eq_to_track(None, i)
+
+    def assign_device_to_track(self, track, i):
+        # nuke existing listener
+        dev = self.devices[i]
+        log("dev was %r" % dev)
+        if dev["track"]:
+            dev["track"].remove_devices_listener(dev["cb"])
+            dev["track"] = None
+            dev["cb"] = None
+            dev["component"].set_lock_to_device(False, None)
+            dev["component"].set_device(None)
+
+        if track is not None:
+            # listen for changes to the device chain
+            def dcb():
+                return self._on_device_changed(i)
+            dev["cb"] = dcb
+            dev["track"] = track
+            track.add_devices_listener(dcb)
+
+            # force an update to attach to any existing device
+            dcb()
+
+    def _on_device_changed(self, i):
+        log("_on_device_changed %d" % i)
+        # the device chain on track i changed-- reassign device if needed
+        track = self.devices[i]["track"]
+        device_comp = self.devices[i]["component"]
+        device = None
+        if track.devices:
+            # Find the first non-EQ device.
+            for dev in track.devices:
+                log("examine device %s" % dev.class_name)
+                if dev.class_name not in EQ_DEVICES:
+                    device = dev
+                    log("using %s" % device.class_name)
+                    break
+        #device_comp.set_device(device)
+        device_comp.set_lock_to_device(True, device)
+        self.update()
+
+    def assign_eq_to_track(self, track, i):
+        # nuke existing listener
+        dev = self.eqs[i]
+        if dev["track"]:
+            dev["track"].remove_devices_listener(dev["cb"])
+            dev["track"] = None
+            dev["cb"] = None
+            dev["component"].set_lock_to_device(False, None)
+            dev["component"].set_device(None)
+
+        if track is not None:
+            # listen for changes to the device chain
+            def dcb():
+                return self._on_eq_changed(i)
+            dev["cb"] = dcb
+            dev["track"] = track
+            track.add_devices_listener(dcb)
+
+            # force an update to attach to any existing device
+            dcb()
+
+    def _on_eq_changed(self, i):
+        log("_on_eq_changed %d" % i)
+        # the device chain on track i changed-- reassign device if needed
+        track = self.eqs[i]["track"]
+        device_comp = self.eqs[i]["component"]
+        device = None
+        if track.devices:
+            # Find the first EQ device.
+            for dev in track.devices:
+                if dev.class_name in EQ_DEVICES:
+                    device = dev
+                    break
+        device_comp.set_lock_to_device(True, device)
+        self.update()
+
+    def set_device_controls(self, track_nr, controls, arm):
+        device_comp = self.devices[track_nr]["component"]
+        device_comp.set_parameter_controls(controls)
+        device_comp.set_on_off_button(arm)
+        device_comp.update()
+
+    def set_eq_controls(self, track_nr, controls):
+        eq_comp = self.eqs[track_nr]["component"]
+        eq_comp.set_parameter_controls(controls)
+        eq_comp.update()
 
 
 class XoneK2(ControlSurface):
@@ -67,13 +237,17 @@ class XoneK2(ControlSurface):
         self.session.update()
 
     def init_mixer(self):
-        self.mixer = MixerComponent(num_tracks=NUM_TRACKS)
+        self.mixer = MixerWithDevices(num_tracks=NUM_TRACKS)
         self.mixer.id = 'Mixer'
 
         self.song().view.selected_track = self.mixer.channel_strip(0)._track
 
         for i in range(NUM_TRACKS):
             self.mixer.channel_strip(i).set_volume_control(fader(FADERS[i]))
+            self.mixer.set_eq_controls(i, (
+                knob(KNOBS3[i]),
+                knob(KNOBS2[i]),
+                knob(KNOBS1[i])))
 
         self.mixer.update()
 
@@ -86,7 +260,7 @@ class XoneK2(ControlSurface):
             button_row = []
             for track_index in range(NUM_TRACKS):
                 note_nr = GRID[scene_index][track_index]
-                b = button(note_nr, 'Clip %d, %d button' % (scene_index, track_index))
+                b = button(note_nr, name='Clip %d, %d button' % (scene_index, track_index))
                 button_row.append(b)
                 clip_slot = scene.clip_slot(track_index)
                 clip_slot.name = 'Clip slot %d, %d' % (scene_index, track_index)
