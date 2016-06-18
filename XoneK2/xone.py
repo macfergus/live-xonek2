@@ -1,3 +1,5 @@
+from _Framework.ButtonElement import ButtonElement
+from _Framework.ButtonMatrixElement import ButtonMatrixElement
 from _Framework.ControlSurface import ControlSurface
 from _Framework.InputControlElement import *
 from _Framework.MixerComponent import MixerComponent
@@ -21,6 +23,19 @@ BUTTONS2 = [44, 45, 46, 47]
 KNOBS3 = [12, 13, 14, 15]
 BUTTONS3 = [40, 41, 42, 43]
 FADERS = [16, 17, 18, 19]
+GRID = [
+    [36, 37, 38, 39],
+    [32, 33, 34, 35],
+    [28, 29, 30, 31],
+    [24, 25, 26, 27],
+]
+
+
+def button(notenr, name=None):
+    rv = ButtonElement(True, MIDI_NOTE_TYPE, CHANNEL, notenr)
+    if name is not None:
+        rv.name = name
+    return rv
 
 
 def fader(notenr):
@@ -63,7 +78,22 @@ class XoneK2(ControlSurface):
         self.mixer.update()
 
     def init_matrix(self):
-        pass
+        self.matrix = ButtonMatrixElement()
+
+        for scene_index in range(NUM_SCENES):
+            scene = self.session.scene(scene_index)
+            scene.name = 'Scene ' + str(scene_index)
+            button_row = []
+            for track_index in range(NUM_TRACKS):
+                note_nr = GRID[scene_index][track_index]
+                b = button(note_nr, 'Clip %d, %d button' % (scene_index, track_index))
+                button_row.append(b)
+                clip_slot = scene.clip_slot(track_index)
+                clip_slot.name = 'Clip slot %d, %d' % (scene_index, track_index)
+                clip_slot.set_stopped_value(0)
+                clip_slot.set_started_value(64)
+                clip_slot.set_launch_button(b)
+            self.matrix.add_row(tuple(button_row))
 
     def init_tempo(self):
         pass
