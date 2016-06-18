@@ -244,6 +244,7 @@ class XoneK2(ControlSurface):
 
         for i in range(NUM_TRACKS):
             self.mixer.channel_strip(i).set_volume_control(fader(FADERS[i]))
+            self.mixer.channel_strip(i).set_solo_button(button(BUTTONS3[i]))
             self.mixer.set_eq_controls(i, (
                 knob(KNOBS3[i]),
                 knob(KNOBS2[i]),
