@@ -1,4 +1,4 @@
-from . import xone
+import xone
 
 
 def create_instance(c_instance):

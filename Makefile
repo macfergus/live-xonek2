@@ -7,3 +7,4 @@ install:
 	rm -f '$(DESTDIR)'/*.pyc
 	install XoneK2/__init__.py '$(DESTDIR)'
 	install XoneK2/xone.py '$(DESTDIR)'
+	install XoneK2/TrackEQComponent.py '$(DESTDIR)'
