@@ -1,3 +1,5 @@
+import time
+
 import Live
 import MidiRemoteScript
 from _Framework.ButtonElement import ButtonElement
@@ -16,6 +18,7 @@ DEBUG = True
 
 
 def log(msg):
+    global g_logger
     if DEBUG:
         if g_logger is not None:
             g_logger(msg)
@@ -51,6 +54,8 @@ GRID = [
     [28, 29, 30, 31],
     [24, 25, 26, 27],
 ]
+ENCODER_LL = 20
+ENCODER_LR = 21
 
 
 def button(notenr, name=None):
@@ -66,6 +71,37 @@ def fader(notenr):
 
 def knob(cc):
     return EncoderElement(MIDI_CC_TYPE, CHANNEL, cc, Live.MidiMap.MapMode.absolute)
+
+
+def encoder(cc):
+    log(repr(dir(Live.MidiMap.MapMode)))
+    return EncoderElement(MIDI_CC_TYPE, CHANNEL, cc, Live.MidiMap.MapMode.absolute)
+
+
+class DynamicEncoder(EncoderElement):
+    def __init__(self, cc, target, growth=1.1, timeout=0.2):
+        self.growth = growth
+        self.timeout = timeout
+        self.encoder = encoder(cc)
+        self.encoder.add_value_listener(self.handle_encoder_turn)
+        self.sensitivity = 1.0
+        self.last_event_value = None
+        self.last_event_time = 0
+        self.target = target
+        log(dir(self.target))
+
+    def handle_encoder_turn(self, value):
+        log('vol %r' % (self.target.value,))
+        now = time.time()
+        if now - self.last_event_time < self.timeout and value == self.last_event_value:
+            self.sensitivity *= self.growth
+        else:
+            self.sensitivity = 1.0
+        delta = (1 if value < 64 else -1) / 128.0
+        delta *= self.sensitivity
+        self.target.value += delta
+        self.last_event_time = now
+        self.last_event_value = value
 
 
 class MixerWithDevices(MixerComponent):
@@ -250,6 +286,10 @@ class XoneK2(ControlSurface):
                 knob(KNOBS2[i]),
                 knob(KNOBS1[i])))
 
+        self.master_encoder = DynamicEncoder(
+            ENCODER_LR, self.song().master_track.mixer_device.volume)
+        self.cue_encoder = DynamicEncoder(
+            ENCODER_LL, self.song().master_track.mixer_device.cue_volume)
         self.mixer.update()
 
     def init_matrix(self):
