@@ -1,4 +1,5 @@
 import time
+from functools import partial
 
 import Live
 import MidiRemoteScript
@@ -107,9 +108,13 @@ class DynamicEncoder(EncoderElement):
             self.sensitivity *= self.growth
         else:
             self.sensitivity = 1.0
-        delta = (1 if value < 64 else -1) / 128.0
+        delta = (1 if value < 64 else -1)
         delta *= self.sensitivity
-        self.target.value += delta
+        if self.target is not None:
+            delta *= float(self.target.max - self.target.min) / 150.0
+            log("%r %r %r %r" % (self.target.name, self.target.min, self.target.max, delta))
+            new_value = self.target.value + delta
+            self.target.value = max(min(self.target.max, new_value), self.target.min)
         self.last_event_time = now
         self.last_event_value = value
 
@@ -145,18 +150,21 @@ class CustomTransportComponent(TransportComponent):
 
 
 class MixerWithDevices(MixerComponent):
-    def __init__(self, num_tracks, num_returns=0):
+    def __init__(self, num_tracks, num_returns=0, device_select=None, device_encoders=None):
         self.devices = []
         self.eqs = []
         MixerComponent.__init__(self, num_tracks, num_returns)
+        self.device_select = device_select
+        self.active_track = 0
+        self.encoders = [DynamicEncoder(cc, None) for cc in device_encoders]
         for i in range(len(self._channel_strips)):
             dev = {
-                "component": DeviceComponent(),
                 "cb": None,
-                "track": None
+                "track": None,
+                "params": [],
+                "toggle": None,
             }
             self.devices.append(dev)
-            self.register_components(dev["component"])
             eq = {
                 "component": DeviceComponent(),
                 "cb": None,
@@ -165,6 +173,25 @@ class MixerWithDevices(MixerComponent):
             self.eqs.append(eq)
             self.register_components(eq["component"])
         self._reassign_tracks()
+        if device_select:
+            for i, b in enumerate(device_select):
+                b.add_value_listener(partial(self.select_track, i))
+
+    def select_track(self, track, value):
+        self.active_track = track
+        log('select_device %r' % (track,))
+        self.light_up(self.active_track)
+        self.attach_encoders()
+
+    def light_up(self, which_track):
+        for i, b in enumerate(self.device_select):
+            velocity = 127 if i == which_track else 0
+            b.send_midi((144, b._msg_identifier, velocity))
+
+    def attach_encoders(self):
+        for control, target in zip(self.encoders, self.devices[self.active_track]["params"]):
+            log("attach %r to %r" % (control, target))
+            control.target = target
 
     def get_active_tracks(self):
         tracks_to_use = self.tracks_to_use()
@@ -209,8 +236,8 @@ class MixerWithDevices(MixerComponent):
             dev["track"].remove_devices_listener(dev["cb"])
             dev["track"] = None
             dev["cb"] = None
-            dev["component"].set_lock_to_device(False, None)
-            dev["component"].set_device(None)
+            dev["params"] = []
+            dev["toggle"] = None
 
         if track is not None:
             # listen for changes to the device chain
@@ -227,7 +254,6 @@ class MixerWithDevices(MixerComponent):
         log("_on_device_changed %d" % i)
         # the device chain on track i changed-- reassign device if needed
         track = self.devices[i]["track"]
-        device_comp = self.devices[i]["component"]
         device = None
         if track.devices:
             # Find the first non-EQ device.
@@ -236,9 +262,10 @@ class MixerWithDevices(MixerComponent):
                 if dev.class_name not in EQ_DEVICES:
                     device = dev
                     log("using %s" % device.class_name)
+                    self.devices[i]["params"] = device.parameters[1:len(self.encoders)]
+                    self.devices[i]["toggle"] = device.parameters[0]
                     break
-        #device_comp.set_device(device)
-        device_comp.set_lock_to_device(True, device)
+        self.attach_encoders()
         self.update()
 
     def assign_eq_to_track(self, track, i):
@@ -277,12 +304,6 @@ class MixerWithDevices(MixerComponent):
         device_comp.set_lock_to_device(True, device)
         self.update()
 
-    def set_device_controls(self, track_nr, controls, arm):
-        device_comp = self.devices[track_nr]["component"]
-        device_comp.set_parameter_controls(controls)
-        device_comp.set_on_off_button(arm)
-        device_comp.update()
-
     def set_eq_controls(self, track_nr, controls):
         eq_comp = self.eqs[track_nr]["component"]
         eq_comp.set_parameter_controls(controls)
@@ -314,7 +335,11 @@ class XoneK2(ControlSurface):
         self.session.update()
 
     def init_mixer(self):
-        self.mixer = MixerWithDevices(num_tracks=NUM_TRACKS)
+        self.mixer = MixerWithDevices(
+            num_tracks=NUM_TRACKS,
+            device_select=[button(PUSH_ENCODERS[i]) for i in range(NUM_TRACKS)],
+            device_encoders=ENCODERS
+        )
         self.mixer.id = 'Mixer'
 
         self.song().view.selected_track = self.mixer.channel_strip(0)._track
@@ -350,7 +375,7 @@ class XoneK2(ControlSurface):
                 clip_slot.set_started_value(64)
                 clip_slot.set_launch_button(b)
             self.matrix.add_row(tuple(button_row))
-        stop_buttons = [button(note_nr) for note_nr in PUSH_ENCODERS]
+        stop_buttons = [button(note_nr) for note_nr in BUTTONS1]
         self.session.set_stop_track_clip_buttons(stop_buttons)
 
     def init_tempo(self):
