@@ -382,7 +382,7 @@ class XoneK2(ControlSurface):
                 clip_slot.set_started_value(64)
                 clip_slot.set_launch_button(b)
             self.matrix.add_row(tuple(button_row))
-        stop_buttons = [button(note_nr) for note_nr in BUTTONS1]
+        stop_buttons = [button(note_nr) for note_nr in BUTTONS2]
         self.session.set_stop_track_clip_buttons(stop_buttons)
 
     def init_tempo(self):
