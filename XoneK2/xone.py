@@ -160,11 +160,13 @@ class MixerWithDevices(MixerComponent):
         for i in range(len(self._channel_strips)):
             dev = {
                 "cb": None,
+                "component": DeviceComponent(),
                 "track": None,
                 "params": [],
                 "toggle": None,
             }
             self.devices.append(dev)
+            self.register_components(dev["component"])
             eq = {
                 "component": DeviceComponent(),
                 "cb": None,
@@ -238,6 +240,8 @@ class MixerWithDevices(MixerComponent):
             dev["cb"] = None
             dev["params"] = []
             dev["toggle"] = None
+            dev["component"].set_lock_to_device(False, None)
+            dev["component"].set_device(None)
 
         if track is not None:
             # listen for changes to the device chain
@@ -254,6 +258,7 @@ class MixerWithDevices(MixerComponent):
         log("_on_device_changed %d" % i)
         # the device chain on track i changed-- reassign device if needed
         track = self.devices[i]["track"]
+        device_comp = self.devices[i]["component"]
         device = None
         if track.devices:
             # Find the first non-EQ device.
@@ -265,6 +270,7 @@ class MixerWithDevices(MixerComponent):
                     self.devices[i]["params"] = device.parameters[1:len(self.encoders)]
                     self.devices[i]["toggle"] = device.parameters[0]
                     break
+        device_comp.set_lock_to_device(True, device)
         self.attach_encoders()
         self.update()
 
@@ -309,6 +315,11 @@ class MixerWithDevices(MixerComponent):
         eq_comp.set_parameter_controls(controls)
         eq_comp.update()
 
+    def set_device_controls(self, track_nr, arm):
+        device_comp = self.devices[track_nr]["component"]
+        device_comp.set_on_off_button(arm)
+        device_comp.update()
+
 
 class XoneK2(ControlSurface):
     def __init__(self, instance):
@@ -351,6 +362,7 @@ class XoneK2(ControlSurface):
                 knob(KNOBS3[i]),
                 knob(KNOBS2[i]),
                 knob(KNOBS1[i])))
+            self.mixer.set_device_controls(i, button(BUTTONS1[i]))
 
         self.master_encoder = DynamicEncoder(
             ENCODER_LR, self.song().master_track.mixer_device.volume)
