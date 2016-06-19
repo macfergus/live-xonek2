@@ -11,6 +11,7 @@ from _Framework.InputControlElement import *
 from _Framework.MixerComponent import MixerComponent
 from _Framework.SessionComponent import SessionComponent
 from _Framework.SliderElement import SliderElement
+from _Framework.TransportComponent import TransportComponent
 
 
 g_logger = None
@@ -55,7 +56,9 @@ GRID = [
     [24, 25, 26, 27],
 ]
 ENCODER_LL = 20
+PUSH_ENCODER_LL = 13
 ENCODER_LR = 21
+PUSH_ENCODER_LR = 14
 
 
 def button(notenr, name=None):
@@ -107,6 +110,36 @@ class DynamicEncoder(EncoderElement):
         self.target.value += delta
         self.last_event_time = now
         self.last_event_value = value
+
+
+class CustomTransportComponent(TransportComponent):
+    """TransportComponent with custom tempo support"""
+
+    def _replace_controller(self, attrname, cb, new_control):
+        old_control = getattr(self, attrname, None)
+        if old_control is not None:
+            old_control.remove_value_listener(cb)
+        setattr(self, attrname, new_control)
+        new_control.add_value_listener(cb)
+        self.update()
+
+    def set_tempo_bumpers(self, bump_up_control, bump_down_control):
+        self._replace_controller('_tempo_bump_up_control',
+                self._tempo_up_value, bump_up_control)
+        self._replace_controller('_tempo_bump_down_control',
+                self._tempo_down_value, bump_down_control)
+
+    def _tempo_shift(self, amount):
+        old_tempo = self.song().tempo
+        self.song().tempo = max(20, min(999, old_tempo + amount))
+
+    def _tempo_up_value(self, value):
+        if value != 0:
+            self._tempo_shift(1.0)
+
+    def _tempo_down_value(self, value):
+        if value != 0:
+            self._tempo_shift(-1.0)
 
 
 class MixerWithDevices(MixerComponent):
@@ -318,4 +351,5 @@ class XoneK2(ControlSurface):
         self.session.set_stop_track_clip_buttons(stop_buttons)
 
     def init_tempo(self):
-        pass
+        self.transport = CustomTransportComponent()
+        self.transport.set_tempo_bumpers(button(PUSH_ENCODER_LR), button(PUSH_ENCODER_LL))
