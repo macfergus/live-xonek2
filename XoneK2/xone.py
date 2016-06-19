@@ -16,7 +16,7 @@ from _Framework.TransportComponent import TransportComponent
 
 
 g_logger = None
-DEBUG = True
+DEBUG = False
 
 
 def log(msg):
@@ -80,7 +80,6 @@ def knob(cc):
 
 
 def encoder(cc):
-    log(repr(dir(Live.MidiMap.MapMode)))
     return EncoderElement(MIDI_CC_TYPE, CHANNEL, cc, Live.MidiMap.MapMode.absolute)
 
 
@@ -112,7 +111,6 @@ class DynamicEncoder(EncoderElement):
         delta *= self.sensitivity
         if self.target is not None:
             delta *= float(self.target.max - self.target.min) / 150.0
-            log("%r %r %r %r" % (self.target.name, self.target.min, self.target.max, delta))
             new_value = self.target.value + delta
             self.target.value = max(min(self.target.max, new_value), self.target.min)
         self.last_event_time = now
@@ -181,7 +179,6 @@ class MixerWithDevices(MixerComponent):
 
     def select_track(self, track, value):
         self.active_track = track
-        log('select_device %r' % (track,))
         self.light_up(self.active_track)
         self.attach_encoders()
 
@@ -192,7 +189,6 @@ class MixerWithDevices(MixerComponent):
 
     def attach_encoders(self):
         for control, target in zip(self.encoders, self.devices[self.active_track]["params"]):
-            log("attach %r to %r" % (control, target))
             control.target = target
 
     def get_active_tracks(self):
@@ -233,7 +229,6 @@ class MixerWithDevices(MixerComponent):
     def assign_device_to_track(self, track, i):
         # nuke existing listener
         dev = self.devices[i]
-        log("dev was %r" % dev)
         if dev["track"]:
             dev["track"].remove_devices_listener(dev["cb"])
             dev["track"] = None
