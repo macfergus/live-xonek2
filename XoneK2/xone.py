@@ -59,6 +59,8 @@ ENCODER_LL = 20
 PUSH_ENCODER_LL = 13
 ENCODER_LR = 21
 PUSH_ENCODER_LR = 14
+BUTTON_LL = 12
+BUTTON_LR = 15
 
 
 def button(notenr, name=None):
@@ -308,6 +310,7 @@ class XoneK2(ControlSurface):
     def init_session(self):
         self.session = SessionComponent(NUM_TRACKS, NUM_SCENES)
         self.session.name = 'Session'
+        self.session.set_scene_bank_buttons(button(BUTTON_LL), button(BUTTON_LR))
         self.session.update()
 
     def init_mixer(self):
