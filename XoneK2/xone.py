@@ -80,6 +80,13 @@ def encoder(cc):
 
 class DynamicEncoder(EncoderElement):
     def __init__(self, cc, target, growth=1.1, timeout=0.2):
+        """
+        target (DeviceParameter)
+        growth (float): How much the paramter change accelerates with
+            quick turns.
+        timeout (float): Seconds. Acceleration will reset after this
+            amount of time passes between encoder events.
+        """
         self.growth = growth
         self.timeout = timeout
         self.encoder = encoder(cc)
@@ -88,10 +95,8 @@ class DynamicEncoder(EncoderElement):
         self.last_event_value = None
         self.last_event_time = 0
         self.target = target
-        log(dir(self.target))
 
     def handle_encoder_turn(self, value):
-        log('vol %r' % (self.target.value,))
         now = time.time()
         if now - self.last_event_time < self.timeout and value == self.last_event_value:
             self.sensitivity *= self.growth
