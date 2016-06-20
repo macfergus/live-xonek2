@@ -36,7 +36,9 @@ EQ_DEVICES = {
     }
 }
 
-CHANNEL = 0
+# Channels are counted from 0. This is what people would normally call
+# channel 15.
+CHANNEL = 14
 
 NUM_TRACKS = 4
 NUM_SCENES = 4
