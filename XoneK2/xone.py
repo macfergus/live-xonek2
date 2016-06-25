@@ -153,9 +153,9 @@ class MixerWithDevices(MixerComponent):
     def __init__(self, num_tracks, num_returns=0, device_select=None, device_encoders=None):
         self.devices = []
         self.eqs = []
-        MixerComponent.__init__(self, num_tracks, num_returns)
-        self.device_select = device_select
         self.active_track = 0
+        self.device_select = device_select
+        MixerComponent.__init__(self, num_tracks, num_returns)
         self.encoders = [DynamicEncoder(cc, None) for cc in device_encoders]
         for i in range(len(self._channel_strips)):
             dev = {
@@ -177,17 +177,22 @@ class MixerWithDevices(MixerComponent):
         self._reassign_tracks()
         if device_select:
             for i, b in enumerate(device_select):
-                b.add_value_listener(partial(self.select_track, i))
+                b.add_value_listener(partial(self.on_device_select_push, i))
 
-    def select_track(self, track, value):
+    def on_device_select_push(self, track, value):
+        if value > 1:
+            self.select_track(track)
+
+    def select_track(self, track):
         self.active_track = track
         self.light_up(self.active_track)
         self.attach_encoders()
 
     def light_up(self, which_track):
-        for i, b in enumerate(self.device_select):
-            velocity = 127 if i == which_track else 0
-            b.send_midi((144, b._msg_identifier, velocity))
+        if self.device_select:
+            for i, b in enumerate(self.device_select):
+                velocity = 127 if i == which_track else 0
+                b.send_midi((144 + CHANNEL, b._msg_identifier, velocity))
 
     def attach_encoders(self):
         for control, target in zip(self.encoders, self.devices[self.active_track]["params"]):
@@ -227,6 +232,7 @@ class MixerWithDevices(MixerComponent):
                 else:
                     log("device %d gets no track" % i)
                     self.assign_eq_to_track(None, i)
+        self.light_up(self.active_track)
 
     def assign_device_to_track(self, track, i):
         # nuke existing listener
@@ -270,6 +276,7 @@ class MixerWithDevices(MixerComponent):
         device_comp.set_lock_to_device(True, device)
         self.attach_encoders()
         self.update()
+        self.light_up(self.active_track)
 
     def assign_eq_to_track(self, track, i):
         # nuke existing listener
